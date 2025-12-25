@@ -1,0 +1,4 @@
+praw
+openai
+yagmail
+python-dotenv
