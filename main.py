@@ -24,16 +24,17 @@ reddit = praw.Reddit(
 )
 ai_client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
 
-def get_reddit_posts():
-    print("正在获取 Reddit 帖子...")
-    subreddit = reddit.subreddit("MachineLearning")
+def get_reddit_posts(subreddit_name, limit=30):
+    print(f"正在从 r/{subreddit_name} 获取帖子...")
+    subreddit = reddit.subreddit(subreddit_name)
     posts = []
     # 获取过去24小时最热的25个帖子
-    for post in subreddit.top(time_filter="week", limit=100):
+    for post in subreddit.top(time_filter="week", limit=limit):
         if post.is_self: # 只看文本讨论帖，避免纯链接
             posts.append({
+                "subreddit": subreddit_name,
                 "title": post.title,
-                "content": post.selftext[:2000], # 截取前2000字
+                "content": post.selftext[:10000], # 截取前2000字
                 "url": f"https://www.reddit.com{post.permalink}",
                 "score": post.score
             })
@@ -85,35 +86,48 @@ def evaluate_post(post):
         return {"score": 0, "summary": "评估失败"}
 
 def main():
-    raw_posts = get_reddit_posts()
+    target_subs = [
+        "MachineLearning", 
+        "ArtificialInteligence", 
+        "LearnMachineLearning", 
+        "ReinforcementLearning"
+    ]
     high_quality_posts = []
+    
+    for sub in target_subs:
+        raw_posts = get_reddit_posts(sub, limit=50)
 
-    for p in raw_posts:
-        # 初步筛选：Reddit 点赞数超过 30 才送去 AI
-        if p['score'] > 1:
-            result = evaluate_post(p)
-            if result['score'] >= 8:
-                p['summary'] = result['summary']
-                p['ai_score'] = result['score']
-                high_quality_posts.append(p)
-    print('high_quality_posts')
-    print(high_quality_posts)
+        for p in raw_posts:
+            # 初步筛选：Reddit 点赞数超过 1 才送去 AI
+            if p['score'] > 1:
+                result = evaluate_post(p)
+                if result['score'] >= 8:
+                    p['summary'] = result['summary']
+                    p['ai_score'] = result['score']
+                    high_quality_posts.append(p)
+
     if not high_quality_posts:
         print("今日没有发现高质量帖子。")
         return
 
     # 构造邮件内容
-    header = f"<h2>今日 r/MachineLearning 高质量精选 ({datetime.now().strftime('%Y-%m-%d')})</h2>"
+    header = f"<h2>AI & ML 社区每周精选 ({datetime.now().strftime('%Y-%m-%d')})</h2>"
+    header += f"<p>涵盖板块: {', '.join([f'r/{s}' for s in target_subs])}</p><hr>"
     sections = []
     
     for p in high_quality_posts:
         section = f"""
-        <div style="margin-bottom: 20px; border-left: 4px solid #3498db; padding-left: 10px; font-family: sans-serif;">
-            <h3><a href="{p['url']}">{p['title']}</a> (AI 评分: {p['ai_score']})</h3>
-            <p style="color: #333;"><strong>AI 总结：</strong>{p['summary']}</p>
-            <p style="color: #666;"><small>Reddit 点赞数: {p['score']}</small></p>
+        <div style="margin-bottom: 25px; border-left: 4px solid #3498db; padding-left: 15px; font-family: sans-serif;">
+            <span style="color: #e67e22; font-weight: bold;">[r/{p['subreddit']}]</span>
+            <h3 style="margin-top: 5px;"><a href="{p['url']}" style="text-decoration: none; color: #2980b9;">{p['title']}</a></h3>
+            <p style="color: #333; background: #f9f9f9; padding: 10px; border-radius: 4px;">
+                <strong>AI 总结：</strong>{p['summary']}
+            </p>
+            <p style="color: #666; font-size: 0.85em;">
+                AI 评分: <span style="color: #27ae60; font-weight: bold;">{p['ai_score']}</span> | 
+                Reddit 点赞: {p['score']}
+            </p>
         </div>
-        <hr style="border: 0; border-top: 1px solid #eee;" />
         """
         sections.append(section)
 
@@ -121,7 +135,7 @@ def main():
     full_html_body = header + "".join(sections)
 
     # 2. 发送邮件
-    print("正在发送邮件...")
+    print(f"正在发送邮件 (共 {len(high_quality_posts)} 篇精选)...")
     try:
         yag = yagmail.SMTP(
             user=EMAIL_USER, 
@@ -131,7 +145,7 @@ def main():
         # 将 contents 指向生成的完整字符串
         yag.send(
             to=RECEIVER_EMAIL, 
-            subject="ML 社区每日自动精选", 
+            subject=f"Reddit Weekly Digest: {len(high_quality_posts)} New Insights",
             contents=full_html_body
         )
         print("任务完成！")
