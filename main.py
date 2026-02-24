@@ -90,7 +90,8 @@ def main():
         "MachineLearning", 
         "ArtificialInteligence", 
         "LearnMachineLearning", 
-        "ReinforcementLearning"
+        "ReinforcementLearning",
+        "FAANGrecruiting"
     ]
     high_quality_posts = []
     
